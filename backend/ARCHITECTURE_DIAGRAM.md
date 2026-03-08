@@ -1,0 +1,340 @@
+# Module Interaction Diagram
+
+## Request Flow with New Enhancements
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     USER UPLOADS RESUME                          │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │   main.py       │
+                    │  FastAPI App    │
+                    └────────┬────────┘
+                             │
+                    ┌─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐
+                    │ logger.info(startup)  │
+                    └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘
+                             │
+                             ▼
+         ┌────────────────────────────────────────┐
+         │   api/resume_routes.py                 │
+         │   upload_resume() endpoint              │
+         └──────────────┬─────────────────────────┘
+                        │
+         ┌──────────────┴──────────────┐
+         │                             │
+    ┌────▼────────┐          ┌────────▼─────────┐
+    │   VALIDATE  │          │   LOG REQUEST    │
+    │   - Type    │          │   - Filename     │
+    │   - Size    │          │   - Timestamp    │
+    └────┬────────┘          └──────────────────┘
+         │
+         ▼
+    ┌─────────────────────────┐
+    │   SAVE FILE TEMP        │
+    │   /tmp/resume.pdf       │
+    └──┬──────────────────────┘
+       │
+       ├─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+       │  logger.info(saved)      │
+       └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│   services/resume_parser.py              │
+│   extract_text_from_pdf()                │
+└──────┬───────────────────────────────────┘
+       │
+       ├─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+       │ logger.info(start)    │
+       └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+       │
+       ▼
+   ┌─────────────────────┐
+   │  Open PDF with      │
+   │  pdfplumber         │
+   └─────┬───────────────┘
+         │
+         ├─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+         │ logger.info(pages)   │
+         └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+         │
+         ▼
+   ┌──────────────────────────┐
+   │  FOR EACH PAGE:          │
+   │  - Extract text          │
+   │  - Append to list        │
+   └──┬───────────────────────┘
+      │
+      ├─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+      │ logger.debug(per_page)     │
+      └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+      │
+      ▼
+   ┌──────────────────────────┐
+   │  Combine all pages       │
+   │  into single string      │
+   └──┬───────────────────────┘
+      │
+      ▼
+┌────────────────────────────────────────────────┐
+│   services/text_cleaner.py                     │
+│   clean_resume_text()                          │
+├────────────────────────────────────────────────┤
+│  1. Remove tabs, form feeds                    │
+│  2. Normalize multiple spaces → single space   │
+│  3. Remove spaces before/after line breaks     │
+│  4. Normalize multiple newlines → 2 newlines   │
+│  5. Strip leading/trailing whitespace          │
+│                                                 │
+│  Result: Clean, normalized text               │
+└──┬───────────────────────────────────────────┘
+   │
+   ▼
+┌──────────────────────────────────────┐
+│  get_text_statistics()                │
+│  Count: characters, words, paragraphs │
+└──┬───────────────────────────────────┘
+   │
+   ├─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+   │ logger.info(cleaning + stats)   │
+   └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+   │
+   ▼
+┌─────────────────────────────────────┐
+│  Return cleaned text                │
+│  Back to resume_parser.py           │
+└──┬──────────────────────────────────┘
+   │
+   ▼
+┌─────────────────────────────────────┐
+│  Resume Parser returns to API       │
+│  resume_routes.py                   │
+└──┬──────────────────────────────────┘
+   │
+   ├─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+   │ logger.info(completion summary)  │
+   └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+   │
+   ▼
+┌──────────────────────────────────────┐
+│  Build JSON Response:                │
+│  - success: true                     │
+│  - filename                          │
+│  - page_count                        │
+│  - extracted_text (CLEANED)          │
+│  - message                           │
+└──┬───────────────────────────────────┘
+   │
+   ▼
+┌──────────────────────────────────────┐
+│  Return JSON to User                 │
+└───────────────┬──────────────────────┘
+                │
+                ▼
+        ┌──────────────────┐
+        │  LOGS WRITTEN:   │
+        │                  │
+        │  console (INFO+) │
+        │  logs/app.log    │
+        │  logs/error.log  │
+        └──────────────────┘
+```
+
+---
+
+## Module Dependencies
+
+```
+main.py
+├── api/resume_routes.py
+│   ├── utils/logger.py  (for logging)
+│   └── services/resume_parser.py
+│       ├── utils/logger.py  (for logging)
+│       └── services/text_cleaner.py
+│
+└── utils/logger.py  (for startup logging)
+```
+
+---
+
+## Data Transformation Pipeline
+
+```
+┌──────────────────┐
+│  Raw PDF File    │
+│  (on disk)       │
+└────────┬─────────┘
+         │
+         ▼ (pdfplumber)
+┌──────────────────────────────────────┐
+│  Raw Text                            │
+│  "John  Doe\n\n\nSoftware Engineer"  │
+│  (unformatted, excessive whitespace) │
+└────────┬─────────────────────────────┘
+         │
+         ▼ (TextCleaner.clean_resume_text)
+┌──────────────────────────────────────┐
+│  Cleaned Text                        │
+│  "John Doe\nSoftware Engineer"       │
+│  (formatted, normalized)             │
+└────────┬─────────────────────────────┘
+         │
+         ▼ (Statistics)
+┌──────────────────────────────────────┐
+│  Text with Metadata                  │
+│  {                                   │
+│    "text": "John Doe\n...",          │
+│    "stats": {                        │
+│      "char_count": 500,              │
+│      "word_count": 85,               │
+│      "paragraphs": 8                 │
+│    }                                 │
+│  }                                   │
+└────────┬─────────────────────────────┘
+         │
+         ▼ (JSON Response)
+┌──────────────────────────────────────┐
+│  API Response                        │
+│  {                                   │
+│    "success": true,                  │
+│    "filename": "resume.pdf",         │
+│    "page_count": 2,                  │
+│    "extracted_text": "John Doe\n...",│
+│    "message": "..."                  │
+│  }                                   │
+└──────────────────────────────────────┘
+```
+
+---
+
+## Logging Architecture
+
+```
+┌─────────────────────────────────────┐
+│  AppLogger (Singleton)              │
+│  - Manages all loggers              │
+│  - Configures handlers              │
+└────────┬────────────────────────────┘
+         │
+         ├─────────────────────┬──────────────────┬──────────────────┐
+         │                     │                  │                  │
+         ▼                     ▼                  ▼                  ▼
+    ┌────────────┐        ┌──────────┐       ┌─────────────┐   ┌─────────────┐
+    │ Console    │        │ app.log  │       │ error.log   │   │ Backup logs │
+    │            │        │          │       │             │   │             │
+    │ INFO+      │        │ DEBUG+   │       │ ERROR+      │   │ Rotated     │
+    │            │        │          │       │             │   │ (10MB max)  │
+    │ Real-time  │        │ Detailed │       │ Critical    │   │             │
+    │ View       │        │ History  │       │ Issues Only │   │ Auto-keep   │
+    │            │        │ (5 files)│       │ (5 files)   │   │ 5 backups   │
+    └────────────┘        └──────────┘       └─────────────┘   └─────────────┘
+```
+
+---
+
+## Class Hierarchy
+
+```
+ResumeParser
+├── extract_text_from_pdf(file_path) -> str
+│   └── Uses pdfplumber to extract from all pages
+│   └── Calls TextCleaner.clean_resume_text()
+│   └── Calls TextCleaner.get_text_statistics()
+│   └── Logs at multiple points
+│
+└── get_page_count(file_path) -> int
+    └── Returns number of pages
+
+TextCleaner
+├── clean_resume_text(text) -> str
+│   └── Standard text normalization
+│   └── Removes whitespace issues
+│   └── Preserves logical line breaks
+│
+├── clean_resume_text_aggressive(text) -> str
+│   └── More aggressive cleaning
+│   └── Single paragraph output
+│
+└── get_text_statistics(text) -> dict
+    └── Returns text metrics
+
+AppLogger
+└── get_logger(name) -> Logger
+    └── Returns configured logger instance
+    └── Sets up all handlers
+```
+
+---
+
+## Error Handling Flow
+
+```
+Error Occurs in resume_parser.py
+    │
+    ├─ FileNotFoundError
+    │   ├─ logger.error()
+    │   ├─ Raise ValueError
+    │   └─ API catches → HTTP 400
+    │
+    ├─ Invalid file type
+    │   ├─ logger.error()
+    │   ├─ Raise ValueError
+    │   └─ API catches → HTTP 400
+    │
+    ├─ PDFException
+    │   ├─ logger.error()
+    │   ├─ Raise ValueError
+    │   └─ API catches → HTTP 400
+    │
+    ├─ No text extracted
+    │   ├─ logger.error()
+    │   ├─ Raise ValueError
+    │   └─ API catches → HTTP 400
+    │
+    └─ Unexpected Exception
+        ├─ logger.error(exc_info=True)
+        ├─ Raise ValueError
+        └─ API catches → HTTP 500
+
+API Error Handler
+    │
+    ├─ logger.error() or logger.warning()
+    │
+    ├─ Determine HTTP status code
+    │
+    └─ Return JSON error response
+```
+
+---
+
+## Next Request Can Access Logs
+
+```
+Request 1: Upload resume.pdf
+  ↓
+Execution logged to:
+  - Console (real-time)
+  - logs/app.log (persistent)
+  - logs/error.log (if error)
+  ↓
+Request 2: Upload another.pdf
+  ↓
+Execution logged AFTER Request 1 in same files
+  ↓
+Can now:
+  ✓ Analyze patterns across requests
+  ✓ Track performance over time
+  ✓ Debug issues with audit trail
+  ✓ Send logs to monitoring service
+```
+
+---
+
+This architecture supports:
+- **Scalability**: Add more services easily
+- **Maintainability**: Each module has single responsibility
+- **Debuggability**: Complete audit trail via logging
+- **Extensibility**: Add LLM processing, databases, etc.
